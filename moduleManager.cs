@@ -132,7 +132,6 @@ namespace ModuleManager
                 log("Total loading Time = " + ((float)totalTime.ElapsedMilliseconds / 1000).ToString("F3") + "s");
             }
 
-
             if (reloading)
             {
                 float percent = 0;
@@ -147,11 +146,6 @@ namespace ModuleManager
                 ScreenMessages.PostScreenMessage("Database reloading " + intPercent + "%", Time.deltaTime,
                     ScreenMessageStyle.UPPER_CENTER);
             }
-
-            // DB check used to track the now fixed TextureReplacer corruption
-            //if (HighLogic.LoadedScene == GameScenes.LOADING)
-            //    MMPatchLoader.checkValues();
-
         }
 
         #region GUI stuff.
@@ -161,8 +155,8 @@ namespace ModuleManager
             if (HighLogic.LoadedScene == GameScenes.LOADING && MMPatchLoader.Instance != null)
             {
                 float offsetY = Mathf.FloorToInt(0.8f * Screen.height);
-
-                if (IsABadIdea())
+                
+                if (Versioning.version_major == 1 && Versioning.version_minor == 0 && Versioning.Revision == 5 && Versioning.BuildID == 1024)
                 {
                     GUIStyle centeredWarningStyle = new GUIStyle(GUI.skin.GetStyle("Label"))
                     {
@@ -170,12 +164,33 @@ namespace ModuleManager
                         fontSize = 16,
                         normal = { textColor = Color.yellow }
                     };
-                    const string warning = "You are using 64-bit KSP on Windows. This version of KSP is known to cause crashes unrelated to mods.";
+                    const string warning = "Your KSP 1.0.5 is running on build 1024. You should upgrade to build 1028 to avoid problems with addons.";
+
                     Vector2 sizeOfWarningLabel = centeredWarningStyle.CalcSize(new GUIContent(warning));
 
                     GUI.Label(new Rect(Screen.width / 2f - (sizeOfWarningLabel.x / 2f), offsetY, sizeOfWarningLabel.x, sizeOfWarningLabel.y), warning, centeredWarningStyle);
+                    
                     offsetY += sizeOfWarningLabel.y;
+                    if (GUI.Button(new Rect(Screen.width/2f - 100, offsetY, 200, 20), "Click to open the Forum thread"))
+                        Application.OpenURL("http://forum.kerbalspaceprogram.com/index.php?/topic/124998-silent-patch-for-ksp-105-published/");
+
+                    offsetY += 25;
                 }
+
+                //if (IsABadIdea())
+                //{
+                //    GUIStyle centeredWarningStyle = new GUIStyle(GUI.skin.GetStyle("Label"))
+                //    {
+                //        alignment = TextAnchor.UpperCenter,
+                //        fontSize = 16,
+                //        normal = { textColor = Color.yellow }
+                //    };
+                //    const string warning = "You are using 64-bit KSP on Windows. This version of KSP is known to cause crashes unrelated to mods.";
+                //    Vector2 sizeOfWarningLabel = centeredWarningStyle.CalcSize(new GUIContent(warning));
+                //
+                //    GUI.Label(new Rect(Screen.width / 2f - (sizeOfWarningLabel.x / 2f), offsetY, sizeOfWarningLabel.x, sizeOfWarningLabel.y), warning, centeredWarningStyle);
+                //    offsetY += sizeOfWarningLabel.y;
+                //}
 
                 GUIStyle centeredStyle = new GUIStyle(GUI.skin.GetStyle("Label"))
                 {
@@ -199,7 +214,7 @@ namespace ModuleManager
                 }
 
 
-                if (IsABadIdea() || nyan)
+                if (nyan)
                 {
                     GUI.color = Color.white;
                     int scale = 1;
@@ -247,11 +262,14 @@ namespace ModuleManager
             }
         }
 
+        
         internal static IntPtr intPtr = new IntPtr(long.MaxValue);
+        /* Not required anymore. At least
         public static bool IsABadIdea()
         {
             return (intPtr.ToInt64() == long.MaxValue) && (Environment.OSVersion.Platform == PlatformID.Win32NT);
         }
+        */
 
         private void WindowGUI(int windowID)
         {
@@ -367,10 +385,13 @@ namespace ModuleManager
                 string status =
                     "You have old versions of Module Manager (older than 1.5) or MMSarbianExt.\nYou will need to remove them for Module Manager and the mods using it to work\nExit KSP and delete those files :\n" +
                     String.Join("\n", badPaths.ToArray());
-                PopupDialog.SpawnPopupDialog("Old versions of Module Manager", status, "OK", false, HighLogic.Skin);
+                PopupDialog.SpawnPopupDialog(new Vector2(0f, 1f), new Vector2(0f, 1f), "Old versions of Module Manager", status, "OK", false, UISkinManager.defaultSkin);
                 log("Old version of Module Manager present. Stopping");
                 return false;
             }
+
+
+            //PopupDialog.SpawnPopupDialog(new Vector2(0.1f, 1f), new Vector2(0.2f, 1f), "Test of the dialog", "Stuff", "OK", false, UISkinManager.defaultSkin);
 
             Assembly currentAssembly = Assembly.GetExecutingAssembly();
             IEnumerable<AssemblyLoader.LoadedAssembly> eligible = from a in AssemblyLoader.loadedAssemblies
@@ -434,7 +455,6 @@ namespace ModuleManager
 
         public static bool keepPartDB = false;
 
-
         private string activity = "Module Manager";
 
         private static readonly Dictionary<string, Regex> regexCache = new Dictionary<string, Regex>();
@@ -460,12 +480,12 @@ namespace ModuleManager
 
         private UrlDir.UrlFile physicsUrlFile;
 
+        private string configSha;
+        private Dictionary<string, string> filesSha = new Dictionary<string, string>();
 
-        private static string configSha;
+        private bool useCache = false;
 
-        private static bool useCache = false;
-
-        private static readonly Stopwatch patchSw = new Stopwatch();
+        private readonly Stopwatch patchSw = new Stopwatch();
 
         private static readonly List<ModuleManagerPostPatchCallback> postPatchCallbacks =
             new List<ModuleManagerPostPatchCallback>();
@@ -555,34 +575,34 @@ namespace ModuleManager
             // Build a list of subdirectory that won't be processed
             List<string> excludePaths = new List<string>();
 
-            if (ModuleManager.IsABadIdea())
-            {
-                foreach (UrlDir.UrlConfig mod in GameDatabase.Instance.root.AllConfigs)
-                {
-                    if (mod.name == "MODULEMANAGER[NOWIN64]")
-                    {
-                        string fullpath = mod.url.Substring(0, mod.url.LastIndexOf('/'));
-                        string excludepath = fullpath.Substring(0, fullpath.LastIndexOf('/'));
-                        excludePaths.Add(excludepath);
-                        log("excludepath: " + excludepath);
-                    }
-                }
-                if (excludePaths.Any())
-                    log("will not process patches in these subdirectories since they were disbaled on KSP Win64:\n" + String.Join("\n", excludePaths.ToArray()));
-            }
+            //if (ModuleManager.IsABadIdea())
+            //{
+            //    foreach (UrlDir.UrlConfig mod in GameDatabase.Instance.root.AllConfigs)
+            //    {
+            //        if (mod.name == "MODULEMANAGER[NOWIN64]")
+            //        {
+            //            string fullpath = mod.url.Substring(0, mod.url.LastIndexOf('/'));
+            //            string excludepath = fullpath.Substring(0, fullpath.LastIndexOf('/'));
+            //            excludePaths.Add(excludepath);
+            //            log("excludepath: " + excludepath);
+            //        }
+            //    }
+            //    if (excludePaths.Any())
+            //        log("will not process patches in these subdirectories since they were disbaled on KSP Win64:\n" + String.Join("\n", excludePaths.ToArray()));
+            //}
 
             #endregion Excluding directories
 
             #region List of mods
 
-            string envInfo = "ModuleManager env info\n";
-            envInfo += "  " + Environment.OSVersion.Platform + " " + ModuleManager.intPtr.ToInt64().ToString("X16") + "\n";
+            //string envInfo = "ModuleManager env info\n";
+            //envInfo += "  " + Environment.OSVersion.Platform + " " + ModuleManager.intPtr.ToInt64().ToString("X16") + "\n";
             //envInfo += "  " + Convert.ToString(ModuleManager.intPtr.ToInt64(), 2)  + " " + Convert.ToString(ModuleManager.intPtr.ToInt64() >> 63, 2) + "\n";
-            string gamePath = Environment.GetCommandLineArgs()[0];
-            envInfo += "  Args: " + gamePath.Split(Path.DirectorySeparatorChar).Last() + " " + string.Join(" ", Environment.GetCommandLineArgs().Skip(1).ToArray()) + "\n";
-            envInfo += "  Executable SHA256 " + FileSHA(gamePath);
-
-            log(envInfo);
+            //string gamePath = Environment.GetCommandLineArgs()[0];
+            //envInfo += "  Args: " + gamePath.Split(Path.DirectorySeparatorChar).Last() + " " + string.Join(" ", Environment.GetCommandLineArgs().Skip(1).ToArray()) + "\n";
+            //envInfo += "  Executable SHA256 " + FileSHA(gamePath);
+            //
+            //log(envInfo);
 
             mods = new List<string>();
 
@@ -681,16 +701,23 @@ namespace ModuleManager
             }
         }
 
-
         private IEnumerator ProcessPatch(bool blocking)
         {
-            IsCacheUpToDate();
-            yield return null;
-
+            try
+            {
+                IsCacheUpToDate();
+            }
+            catch (Exception ex)
+            {
+                log("Exception in IsCacheUpToDate : " + ex.Message + "\n" + ex.StackTrace);
+                useCache = false;
+            }
 
 #if DEBUG
-            useCache = false;
+            //useCache = false;
 #endif
+
+            yield return null;
 
             List<string> excludePaths = PrePatchInit();
 
@@ -750,9 +777,25 @@ namespace ModuleManager
                         errors += errorFiles[file] + " error" + (errorFiles[file] > 1 ? "s" : "") + " related to GameData/" + file
                                   + "\n";
                     }
+                    
+                    log("Errors in patch prevents the creation of the cache");
+                    try
+                    {
+                        if (File.Exists(cachePath))
+                            File.Delete(cachePath);
+                        if (File.Exists(shaPath))
+                            File.Delete(shaPath);
+                    }
+                    catch (Exception e)
+                    {
+                        log("Exception while deleting stale cache " + e);
+                    }
                 }
-
-                CreateCache();
+                else
+                {
+                    CreateCache();
+                }
+                
                 SaveModdedTechTree();
                 SaveModdedPhysics();
             }
@@ -863,8 +906,6 @@ namespace ModuleManager
 
         private void SaveModdedPhysics()
         {
-            //UrlDir.UrlConfig[] configs = GameDatabase.Instance.GetConfigs("TechTree");
-
             List<UrlDir.UrlConfig> configs = physicsUrlFile.configs;
 
             if (configs.Count == 0)
@@ -914,33 +955,33 @@ namespace ModuleManager
 
         private string FileSHA(string filename)
         {
-			try
-			{
-				if (File.Exists(filename))
-	            {
-	                System.Security.Cryptography.SHA256 sha = System.Security.Cryptography.SHA256.Create();
+            try
+            {
+                if (File.Exists(filename))
+                {
+                    System.Security.Cryptography.SHA256 sha = System.Security.Cryptography.SHA256.Create();
 
-	                byte[] data = null;
-	                using (FileStream fs = File.Open(filename, FileMode.Open, FileAccess.Read))
-	                {
-	                    data = sha.ComputeHash(fs);
-	                }
+                    byte[] data = null;
+                    using (FileStream fs = File.Open(filename, FileMode.Open, FileAccess.Read))
+                    {
+                        data = sha.ComputeHash(fs);
+                    }
 
-	                string hashedValue = string.Empty;
+                    string hashedValue = string.Empty;
 
-	                foreach (byte b in data)
-	                {
-	                    hashedValue += String.Format("{0,2:x2}", b);
-	                }
+                    foreach (byte b in data)
+                    {
+                        hashedValue += String.Format("{0,2:x2}", b);
+                    }
 
-	                return hashedValue;
-	            }
-			}
-			catch (Exception e)
-			{
-				log("Exception hashing file " + filename + "\n" + e.ToString());
-				return "0";
-			}
+                    return hashedValue;
+                }
+            }
+            catch (Exception e)
+            {
+                log("Exception hashing file " + filename + "\n" + e.ToString());
+                return "0";
+            }
             return "0";
         }
 
@@ -950,22 +991,30 @@ namespace ModuleManager
             sw.Start();
 
             System.Security.Cryptography.SHA256 sha = System.Security.Cryptography.SHA256.Create();
+            System.Security.Cryptography.SHA256 filesha = System.Security.Cryptography.SHA256.Create();
             UrlDir.UrlFile[] files = GameDatabase.Instance.root.AllConfigFiles.ToArray();
             for (int i = 0; i < files.Length; i++)
             {
                 // Hash the file path so the checksum change if files are moved
                 byte[] pathBytes = Encoding.UTF8.GetBytes(files[i].url);
                 sha.TransformBlock(pathBytes, 0, pathBytes.Length, pathBytes, 0);
-
+                
                 // hash the file content
                 byte[] contentBytes = File.ReadAllBytes(files[i].fullPath);
                 if (i == files.Length - 1)
                     sha.TransformFinalBlock(contentBytes, 0, contentBytes.Length);
                 else
                     sha.TransformBlock(contentBytes, 0, contentBytes.Length, contentBytes, 0);
+
+                
+                filesha.ComputeHash(contentBytes);
+                filesSha.Add(files[i].url, BitConverter.ToString(filesha.Hash));
+                
             }
 
             configSha = BitConverter.ToString(sha.Hash);
+            sha.Clear();
+            filesha.Clear();
 
             sw.Stop();
 
@@ -981,7 +1030,9 @@ namespace ModuleManager
                     string storedSHA = shaConfigNode.GetValue("SHA");
                     string version = shaConfigNode.GetValue("version");
                     string kspVersion = shaConfigNode.GetValue("KSPVersion");
-                    useCache = storedSHA.Equals(configSha);
+                    ConfigNode filesShaNode = shaConfigNode.GetNode("FilesSHA");
+                    useCache = CheckFilesChange(files, filesShaNode);
+                    useCache = useCache && storedSHA.Equals(configSha);
                     useCache = useCache && version.Equals(Assembly.GetExecutingAssembly().GetName().Version.ToString());
                     useCache = useCache && kspVersion.Equals(Versioning.version_major + "." + Versioning.version_minor + "." + Versioning.Revision + "." + Versioning.BuildID);
                     useCache = useCache && File.Exists(cachePath);
@@ -993,13 +1044,65 @@ namespace ModuleManager
             }
         }
 
+        private bool CheckFilesChange(UrlDir.UrlFile[] files, ConfigNode shaConfigNode)
+        {
+            bool noChange = true;
+            StringBuilder changes = new StringBuilder();
+            
+            for (int i = 0; i < files.Length; i++)
+            {
+                ConfigNode fileNode = getFileNode(shaConfigNode, files[i].url);
+                string fileSha = fileNode != null ? fileNode.GetValue("SHA") : null;
+
+                if (fileNode == null)
+                    continue;
+
+                if (fileSha == null || filesSha[files[i].url] != fileSha)
+                {
+                    changes.Append("Changed : " + fileNode.GetValue("filename") + ".cfg\n");
+                    noChange = false;
+                }
+            }
+            for (int i = 0; i < files.Length; i++)
+            {
+                ConfigNode fileNode = getFileNode(shaConfigNode, files[i].url);
+
+                if (fileNode == null)
+                {
+                    changes.Append("Added   : " + files[i].url + ".cfg\n");
+                    noChange = false;
+                }
+                shaConfigNode.RemoveNode(fileNode);
+            }
+            foreach (ConfigNode fileNode in shaConfigNode.GetNodes())
+            {
+                changes.Append("Deleted : " + fileNode.GetValue("filename") + ".cfg\n");
+                noChange = false;
+            }
+            if (!noChange)
+                log("Changes :\n" + changes.ToString());
+            return noChange;
+        }
+
+        private ConfigNode getFileNode(ConfigNode shaConfigNode, string filename)
+        {
+            for (int i = 0; i < shaConfigNode.nodes.Count; i++)
+            {
+                ConfigNode file = shaConfigNode.nodes[i];
+                if (file.name == "FILE" && file.GetValue("filename") == filename)
+                    return file;
+            }
+            return null;
+        }
+        
+
         private void CreateCache()
         {
             ConfigNode shaConfigNode = new ConfigNode();
             shaConfigNode.AddValue("SHA", configSha);
             shaConfigNode.AddValue("version", Assembly.GetExecutingAssembly().GetName().Version.ToString());
             shaConfigNode.AddValue("KSPVersion", Versioning.version_major + "." + Versioning.version_minor + "." + Versioning.Revision + "." + Versioning.BuildID);
-            shaConfigNode.Save(shaPath);
+            ConfigNode filesSHANode = shaConfigNode.AddNode("FilesSHA");
 
             ConfigNode cache = new ConfigNode();
 
@@ -1017,6 +1120,28 @@ namespace ModuleManager
                 node.AddNode(config.config);
             }
 
+            foreach (var file in GameDatabase.Instance.root.AllConfigFiles)
+            {
+                // "/Physics" is the node we created manually to loads the PHYSIC config
+                if (file.url != "/Physics" && filesSha.ContainsKey(file.url))
+                {
+                    ConfigNode shaNode = filesSHANode.AddNode("FILE");
+                    shaNode.AddValue("filename", file.url);
+                    shaNode.AddValue("SHA", filesSha[file.url]);
+                    filesSha.Remove(file.url);
+                }
+            }
+
+            log("Saving cache");
+
+            try
+            {
+                shaConfigNode.Save(shaPath);
+            }
+            catch (Exception e)
+            {
+                log("Exception while saving the sha\n" + e.ToString());
+            }
             try
             {
                 cache.Save(cachePath);
@@ -1081,6 +1206,13 @@ namespace ModuleManager
 
             if (cache.HasValue("catEatenCount"))
                 int.TryParse(cache.GetValue("catEatenCount"), out catEatenCount);
+
+
+            // Create the fake file where we load the physic config cache
+            UrlDir gameDataDir = GameDatabase.Instance.root.AllDirectories.First(d => d.path.EndsWith("GameData") && d.name == "" && d.url == "");
+            // need to use a file with a cfg extension to get the right fileType or you can't AddConfig on it
+            physicsUrlFile = new UrlDir.UrlFile(gameDataDir, new FileInfo(defaultPhysicsPath));
+            gameDataDir.files.Add(physicsUrlFile);
 
             foreach (ConfigNode node in cache.nodes)
             {
@@ -1383,44 +1515,59 @@ namespace ModuleManager
                             {
                                 foreach (string pattern in patterns)
                                 {
-                                    if (url.type == type && WildcardMatch(url.name, pattern)
-                                        && CheckConstraints(url.config, condition) && !IsPathInList(mod.url, excludePaths))
+                                    bool loop = false;
+                                    do
                                     {
-                                        nodeStack.Clear();
-                                        switch (cmd)
+                                        if (url.type == type && WildcardMatch(url.name, pattern)
+                                            && CheckConstraints(url.config, condition) && !IsPathInList(mod.url, excludePaths))
                                         {
-                                            case Command.Edit:
-                                                log("Applying node " + mod.url + " to " + url.url);
-                                                patchedNodeCount++;
-                                                url.config = ModifyNode(url.config, mod.config);
-                                                break;
+                                            nodeStack.Clear();
+                                            switch (cmd)
+                                            {
+                                                case Command.Edit:
+                                                    log("Applying node " + mod.url + " to " + url.url);
+                                                    patchedNodeCount++;
+                                                    url.config = ModifyNode(url.config, mod.config);
+                                                    break;
 
-                                            case Command.Copy:
-                                                ConfigNode clone = ModifyNode(url.config, mod.config);
-                                                if (url.config.name != mod.name)
-                                                {
-                                                    log("Copying Node " + url.config.name + " into " + clone.name);
-                                                    url.parent.configs.Add(new UrlDir.UrlConfig(url.parent, clone));
-                                                }
-                                                else
-                                                {
-                                                    errorCount++;
-                                                    log("Error - Error while processing " + mod.config.name +
-                                                        " the copy needs to have a different name than the parent (use @name = xxx)");
-                                                }
-                                                break;
+                                                case Command.Copy:
+                                                    ConfigNode clone = ModifyNode(url.config, mod.config);
+                                                    if (url.config.name != mod.name)
+                                                    {
+                                                        log("Copying Node " + url.config.name + " into " + clone.name);
+                                                        url.parent.configs.Add(new UrlDir.UrlConfig(url.parent, clone));
+                                                    }
+                                                    else
+                                                    {
+                                                        errorCount++;
+                                                        log("Error - Error while processing " + mod.config.name +
+                                                            " the copy needs to have a different name than the parent (use @name = xxx)");
+                                                    }
+                                                    break;
 
-                                            case Command.Delete:
-                                                log("Deleting Node " + url.config.name);
-                                                url.parent.configs.Remove(url);
-                                                break;
+                                                case Command.Delete:
+                                                    log("Deleting Node " + url.config.name);
+                                                    url.parent.configs.Remove(url);
+                                                    break;
 
-                                            case Command.Replace:
+                                                case Command.Replace:
 
-                                                // TODO: do something sensible here.
-                                                break;
+                                                    // TODO: do something sensible here.
+                                                    break;
+                                            }
+                                            // When this special node is found then try to apply the patch once more on the same NODE
+                                            if (mod.config.HasNode("MM_PATCH_LOOP"))
+                                            {
+                                                log("Looping on " + mod.url + " to " + url.url);
+                                                loop = true;
+                                            }
                                         }
-                                    }
+                                        else
+                                        {
+                                            loop = false;
+                                        }
+                                    } while (loop);
+
                                 }
                             }
                         }
@@ -1451,8 +1598,11 @@ namespace ModuleManager
             }
         }
 
-        // Name is group 1, index is group 2, operator is group 3
-        private static Regex parseValue = new Regex(@"([\w\&\-\.\?\*]*)(?:,(-?[0-9]+))?(?:\s([+\-*/^!]))?");
+        // Name is group 1, index is group 2, vector related filed is group 3, vector separator is group 4, operator is group 5
+        private static Regex parseValue = new Regex(@"([\w\&\-\.\?\*]*)(?:,(-?[0-9\*]+))?(?:\[((?:[0-9\*]+)+)(?:,(.))?\])?(?:\s([+\-*/^!]))?");
+
+        // Path is group 1, operator is group 5
+        private static Regex parseAssign = new Regex(@"(.*)(?:\s)+([+\-*/^!])?");
 
         // ModifyNode applies the ConfigNode mod as a 'patch' to ConfigNode original, then returns the patched ConfigNode.
         // it uses FindConfigNodeIn(src, nodeType, nodeName, nodeTag) to recurse.
@@ -1475,6 +1625,63 @@ namespace ModuleManager
                 string valName;
                 Command cmd = ParseCommand(modVal.name, out valName);
 
+                if (cmd == Command.Special)
+                {
+                    Match assignMatch = parseAssign.Match(valName);
+                    if (!assignMatch.Success)
+                    {
+                        log("Error - Cannot parse value assigning command: " + valName);
+                        errorCount++;
+                        continue;
+                    }
+
+                    valName = assignMatch.Groups[1].Value;
+
+                    ConfigNode.Value val = RecurseVariableSearch(valName, mod);
+
+                    if (val == null)
+                    {
+                        log("Error - Cannot find value assigning command: " + valName);
+                        errorCount++;
+                        continue;
+                    }
+                    
+                    if (assignMatch.Groups[2].Success)
+                    {
+                        double os, s;
+                        if (double.TryParse(modVal.value, out s) && double.TryParse(val.value, out os))
+                        {
+                            switch (assignMatch.Groups[2].Value[0])
+                            {
+                                case '*':
+                                    val.value = (os * s).ToString();
+                                    break;
+
+                                case '/':
+                                    val.value = (os / s).ToString();
+                                    break;
+
+                                case '+':
+                                    val.value = (os + s).ToString();
+                                    break;
+
+                                case '-':
+                                    val.value = (os - s).ToString();
+                                    break;
+
+                                case '!':
+                                    val.value = Math.Pow(os, s).ToString();
+                                    break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        val.value = modVal.value;
+                    }
+                    continue;
+                }
+
                 Match match = parseValue.Match(valName);
                 if (!match.Success)
                 {
@@ -1486,12 +1693,35 @@ namespace ModuleManager
                 // Get the bits and pieces from the regexp
                 valName = match.Groups[1].Value;
 
+                // Get a position for editing a vector
+                int position = 0;
+                bool isPosStar = false;
+                if (match.Groups[3].Success)
+                {
+                    if (match.Groups[3].Value == "*")
+                        isPosStar = true;
+                    else if (!int.TryParse(match.Groups[3].Value, out position))
+                    {
+                        Debug.LogError("Error - Unable to parse number as number. Very odd.");
+                        errorCount++;
+                        continue;
+                    }
+                }
+                char seperator = ',';
+                if (match.Groups[4].Success)
+                {
+                    seperator = match.Groups[4].Value[0];
+                }
+
                 // In this case insert the value at position index (with the same node names)
                 int index = 0;
+                bool isStar = false;
                 if (match.Groups[2].Success)
                 {
+                    if (match.Groups[2].Value == "*")
+                        isStar = true;
                     // can have "node,n *" (for *= ect)
-                    if (!int.TryParse(match.Groups[2].Value, out index))
+                    else if (!int.TryParse(match.Groups[2].Value, out index))
                     {
                         Debug.LogError("Error - Unable to parse number as number. Very odd.");
                         errorCount++;
@@ -1500,14 +1730,14 @@ namespace ModuleManager
                 }
 
                 char op = ' ';
-                if (match.Groups[3].Success)
-                    op = match.Groups[3].Value[0];
+                if (match.Groups[5].Success)
+                    op = match.Groups[5].Value[0];
 
                 string varValue;
                 switch (cmd)
                 {
                     case Command.Insert:
-                        if (match.Groups[3].Success)
+                        if (match.Groups[5].Success)
                         {
                             log("Error - Cannot use operators with insert value: " + mod.name);
                             errorCount++;
@@ -1528,12 +1758,12 @@ namespace ModuleManager
                         break;
 
                     case Command.Replace:
-                        if (match.Groups[2].Success || match.Groups[3].Success || valName.Contains('*')
+                        if (match.Groups[2].Success || match.Groups[5].Success || valName.Contains('*')
                             || valName.Contains('?'))
                         {
                             if (match.Groups[2].Success)
                                 log("Error - Cannot use index with replace (%) value: " + mod.name);
-                            if (match.Groups[3].Success)
+                            if (match.Groups[5].Success)
                                 log("Error - Cannot use operators with replace (%) value: " + mod.name);
                             if (valName.Contains('*') || valName.Contains('?'))
                                 log("Error - Cannot use wildcards (* or ?) with replace (%) value: " + mod.name);
@@ -1562,44 +1792,55 @@ namespace ModuleManager
                         // Format is @key = value or @key *= value or @key += value or @key -= value
                         // or @key,index = value or @key,index *= value or @key,index += value or @key,index -= value
 
-                        varValue = ProcessVariableSearch(modVal.value, newNode);
-
-                        if (varValue != null)
+                        while (index < newNode.values.Count)
                         {
-                            ConfigNode.Value origVal;
-                            string value = FindAndReplaceValue(mod, ref valName, varValue, newNode, op, index,
-                                out origVal);
+                            varValue = ProcessVariableSearch(modVal.value, newNode);
 
-                            if (value != null)
+                            if (varValue != null)
                             {
-                                if (origVal.value != value)
-                                    vals += ": " + origVal.value + " -> " + value;
+                                ConfigNode.Value origVal;
+                                string value = FindAndReplaceValue(mod, ref valName, varValue, newNode, op, index,
+                                    out origVal, match.Groups[3].Success, position, isPosStar, seperator);
 
-                                if (cmd != Command.Copy)
-                                    origVal.value = value;
-                                else
-                                    newNode.AddValue(valName, value);
+                                if (value != null)
+                                {
+                                    if (origVal.value != value)
+                                        vals += ": " + origVal.value + " -> " + value;
+
+                                    if (cmd != Command.Copy)
+                                        origVal.value = value;
+                                    else
+                                        newNode.AddValue(valName, value);
+                                }
                             }
-                        }
-                        else
-                        {
-                            log("Error - Cannot parse variable search when editing key " + valName + " = " + modVal.value);
-                            errorCount++;
+                            else
+                            {
+                                log("Error - Cannot parse variable search when editing key " + valName + " = " + modVal.value);
+                                errorCount++;
+                            }
+
+                            if (isStar) index++;
+                            else break;
                         }
                         break;
 
                     case Command.Delete:
-                        if (match.Groups[3].Success)
+                        if (match.Groups[5].Success)
                         {
                             log("Error - Cannot use operators with delete (- or !) value: " + mod.name);
                             errorCount++;
                         }
                         else if (match.Groups[2].Success)
                         {
-                            // If there is an index, use it.
-                            ConfigNode.Value v = FindValueIn(newNode, valName, index);
-                            if (v != null)
-                                newNode.values.Remove(v);
+                            while (index < newNode.values.Count)
+                            {
+                                // If there is an index, use it.
+                                ConfigNode.Value v = FindValueIn(newNode, valName, index);
+                                if (v != null)
+                                    newNode.values.Remove(v);
+                                if (isStar) index++;
+                                else break;
+                            }
                         }
                         else if (valName.Contains('*') || valName.Contains('?'))
                         {
@@ -1976,11 +2217,11 @@ namespace ModuleManager
             return currentNode;
         }
 
-        // KeyName is group 1, index is group 2, value indexis  group 3, value separator is group 4
+        // KeyName is group 1, index is group 2, value index is group 3, value separator is group 4
         private static readonly Regex parseVarKey = new Regex(@"([\w\&\-\.]+)(?:,((?:[0-9]+)+))?(?:\[((?:[0-9]+)+)(?:,(.))?\])?");
 
         // Search for a value by a path alike string
-        private static string RecurseVariableSearch(string path, ConfigNode currentNode)
+        private static ConfigNode.Value RecurseVariableSearch(string path, ConfigNode currentNode)
         {
             //log("path:" + path);
             if (path[0] == '/')
@@ -2042,7 +2283,7 @@ namespace ModuleManager
             {
                 if (nodeStack.Count == 1)
                     return null;
-                string result;
+                ConfigNode.Value result;
                 ConfigNode top = nodeStack.Pop();
                 try
                 {
@@ -2138,23 +2379,24 @@ namespace ModuleManager
                 log("Cannot find key " + valName + " in " + currentNode.name);
                 return null;
             }
-            string value = cVal.value;
-
+            
             if (match.Groups[3].Success)
             {
+                ConfigNode.Value newVal = new ConfigNode.Value(cVal.name, cVal.value);
                 int splitIdx = 0;
                 int.TryParse(match.Groups[3].Value, out splitIdx);
 
                 char sep = ',';
                 if (match.Groups[4].Success)
                     sep = match.Groups[4].Value[0];
-                string[] split = value.Split(sep);
+                string[] split = newVal.value.Split(sep);
                 if (splitIdx < split.Length)
-                    value = split[splitIdx];
-				else
-					value = "";
+                    newVal.value = split[splitIdx];
+                else
+                    newVal.value = "";
+                return newVal;
             }
-            return value;
+            return cVal;
         }
 
         private static string ProcessVariableSearch(string value, ConfigNode node)
@@ -2174,7 +2416,7 @@ namespace ModuleManager
 
                 for (int i = 1; i < split.Length - 1; i = i + 2)
                 {
-                    string result = RecurseVariableSearch(split[i], node);
+                    string result = RecurseVariableSearch(split[i], node).value;
                     if (result == null)
                         return null;
                     builder.Append(result);
@@ -2193,76 +2435,101 @@ namespace ModuleManager
             ConfigNode newNode,
             char op,
             int index,
-            out ConfigNode.Value origVal)
+            out ConfigNode.Value origVal,
+            bool hasPosIndex = false,
+            int posIndex = 0,
+            bool hasPosStar = false,
+            char seperator = ',')
         {
             origVal = FindValueIn(newNode, valName, index);
             if (origVal == null)
                 return null;
             string oValue = origVal.value;
 
-            if (op != ' ')
+            string[] strArray = new string[] { oValue };
+            if (hasPosIndex)
             {
-                double s, os;
-                if (op == '^')
+                strArray = oValue.Split(new char[] { seperator }, StringSplitOptions.RemoveEmptyEntries);
+                if (posIndex >= strArray.Length)
                 {
-                    try
-                    {
-                        string[] split = value.Split(value[0]);
-
-                        Regex replace;
-                        if (regexCache.ContainsKey(split[1]))
-                            replace = regexCache[split[1]];
-                        else
-                        {
-                            replace = new Regex(split[1], RegexOptions.None);
-                            regexCache.Add(split[1], replace);
-                        }
-
-                        value = replace.Replace(oValue, split[2]);
-                    }
-                    catch (Exception ex)
-                    {
-                        log("Error - Failed to do a regexp replacement: " + mod.name + " : original value=\"" + oValue +
-                            "\" regexp=\"" + value +
-                            "\" \nNote - to use regexp, the first char is used to subdivide the string (much like sed)\n" +
-                            ex);
-                        errorCount++;
-                        return null;
-                    }
-                }
-                else if (double.TryParse(value, out s) && double.TryParse(oValue, out os))
-                {
-                    switch (op)
-                    {
-                        case '*':
-                            value = (os * s).ToString();
-                            break;
-
-                        case '/':
-                            value = (os / s).ToString();
-                            break;
-
-                        case '+':
-                            value = (os + s).ToString();
-                            break;
-
-                        case '-':
-                            value = (os - s).ToString();
-                            break;
-
-                        case '!':
-                            value = Math.Pow(os, s).ToString();
-                            break;
-                    }
-                }
-                else
-                {
-                    log("Error - Failed to do a maths replacement: " + mod.name + " : original value=\"" + oValue +
-                        "\" operator=" + op + " mod value=\"" + value + "\"");
+                    log("Invalid Vector Index!");
                     errorCount++;
                     return null;
                 }
             }
+            string backupValue = value;
+            while (posIndex < strArray.Length)
+            {
+                value = backupValue;
+                oValue = strArray[posIndex];
+                if (op != ' ')
+                {
+                    double s, os;
+                    if (op == '^')
+                    {
+                        try
+                        {
+                            string[] split = value.Split(value[0]);
+
+                            Regex replace;
+                            if (regexCache.ContainsKey(split[1]))
+                                replace = regexCache[split[1]];
+                            else
+                            {
+                                replace = new Regex(split[1], RegexOptions.None);
+                                regexCache.Add(split[1], replace);
+                            }
+
+                            value = replace.Replace(oValue, split[2]);
+                        }
+                        catch (Exception ex)
+                        {
+                            log("Error - Failed to do a regexp replacement: " + mod.name + " : original value=\"" + oValue +
+                                "\" regexp=\"" + value +
+                                "\" \nNote - to use regexp, the first char is used to subdivide the string (much like sed)\n" +
+                                ex);
+                            errorCount++;
+                            return null;
+                        }
+                    }
+                    else if (double.TryParse(value, out s) && double.TryParse(oValue, out os))
+                    {
+                        switch (op)
+                        {
+                            case '*':
+                                value = (os * s).ToString();
+                                break;
+
+                            case '/':
+                                value = (os / s).ToString();
+                                break;
+
+                            case '+':
+                                value = (os + s).ToString();
+                                break;
+
+                            case '-':
+                                value = (os - s).ToString();
+                                break;
+
+                            case '!':
+                                value = Math.Pow(os, s).ToString();
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        log("Error - Failed to do a maths replacement: " + mod.name + " : original value=\"" + oValue +
+                            "\" operator=" + op + " mod value=\"" + value + "\"");
+                        errorCount++;
+                        return null;
+                    }
+                }
+                strArray[posIndex] = value;
+                if (hasPosStar) posIndex++;
+                else break;
+            }
+            value = String.Join(new string(seperator, 1), strArray);
             return value;
         }
 
@@ -2284,7 +2551,9 @@ namespace ModuleManager
 
             Rename,
 
-            Paste
+            Paste,
+
+            Special
         }
 
         private static Command ParseCommand(string name, out string valueName)
@@ -2321,6 +2590,10 @@ namespace ModuleManager
 
                 case '#':
                     ret = Command.Paste;
+                    break;
+
+                case '*':
+                    ret = Command.Special;
                     break;
 
                 default:
