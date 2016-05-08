@@ -60,6 +60,9 @@ namespace ModuleManager
         {
             totalTime.Start();
 
+            // Allow loading the background in the laoding screen
+            Application.runInBackground = true;
+
             // Ensure that only one copy of the service is run per scene change.
             if (loadedInScene || !ElectionAndCheck())
             {
@@ -130,6 +133,9 @@ namespace ModuleManager
             {
                 totalTime.Stop();
                 log("Total loading Time = " + ((float)totalTime.ElapsedMilliseconds / 1000).ToString("F3") + "s");
+
+                Application.runInBackground = GameSettings.SIMULATE_IN_BACKGROUND;
+
             }
 
             if (reloading)
@@ -537,7 +543,7 @@ namespace ModuleManager
 
         public void Update()
         {
-            if (appliedPatchCount > 0)
+            if (appliedPatchCount > 0 && HighLogic.LoadedScene == GameScenes.LOADING)
                 StatusUpdate();
         }
 
@@ -1562,6 +1568,11 @@ namespace ModuleManager
 
                                                     // TODO: do something sensible here.
                                                     break;
+
+                                                case Command.Create:
+
+                                                    // TODO: something similar to above
+                                                    break;
                                             }
                                             // When this special node is found then try to apply the patch once more on the same NODE
                                             if (mod.config.HasNode("MM_PATCH_LOOP"))
@@ -1879,6 +1890,35 @@ namespace ModuleManager
                         }
                         newNode.name = modVal.value;
                         break;
+
+                    case Command.Create:
+                        if (match.Groups[2].Success || match.Groups[5].Success || valName.Contains('*')
+                            || valName.Contains('?'))
+                        {
+                            if (match.Groups[2].Success)
+                                log("Error - Cannot use index with create (&) value: " + mod.name);
+                            if (match.Groups[5].Success)
+                                log("Error - Cannot use operators with create (&) value: " + mod.name);
+                            if (valName.Contains('*') || valName.Contains('?'))
+                                log("Error - Cannot use wildcards (* or ?) with create (&) value: " + mod.name);
+                            errorCount++;
+                        }
+                        else
+                        {
+                            varValue = ProcessVariableSearch(modVal.value, newNode);
+                            if (varValue != null)
+                            {
+                                if (!newNode.HasValue(valName))
+                                    newNode.AddValue(valName, varValue);
+                            }
+                            else
+                            {
+                                log("Error - Cannot parse variable search when replacing (%) key " + valName + " = " +
+                                    modVal.value);
+                                errorCount++;
+                            }
+                        }
+                        break;
                 }
             }
             //log(vals);
@@ -1908,15 +1948,18 @@ namespace ModuleManager
                 {
                     ConfigNode newSubMod = new ConfigNode(subMod.name);
                     newSubMod = ModifyNode(newSubMod, subMod);
+                    subName = newSubMod.name;
                     int index;
                     if (subName.Contains(",") && int.TryParse(subName.Split(',')[1], out index))
                     {
                         // In this case insert the node at position index (with the same node names)
-                        subMod.name = subName.Split(',')[0];
+                        newSubMod.name = subName.Split(',')[0];
                         InsertNode(newNode, newSubMod, index);
                     }
                     else
+                    {
                         newNode.AddNode(newSubMod);
+                    }
                 }
                 else if (command == Command.Paste)
                 {
@@ -2020,8 +2063,47 @@ namespace ModuleManager
                         if (n != null)
                             subNodes.Add(n);
                     }
+                    
+                    if (command == Command.Replace)
+                    {
+                        // if the original exists modify it
+                        if (subNodes.Count > 0)
+                        {
+                            msg += "  Applying subnode " + subMod.name + "\n";
+                            ConfigNode newSubNode = ModifyNode(subNodes[0], subMod);
+                            subNodes[0].ClearData();
+                            newSubNode.CopyTo(subNodes[0], newSubNode.name);
+                        }
+                        else
+                        {
+                            // if not add the mod node without the % in its name
+                            msg += "  Adding subnode " + subMod.name + "\n";
 
-                    if (command != Command.Replace)
+                            ConfigNode copy = new ConfigNode(nodeType);
+
+                            if (nodeName != null)
+                                copy.AddValue("name", nodeName);
+
+                            ConfigNode newSubNode = ModifyNode(copy, subMod);
+                            newNode.nodes.Add(newSubNode);
+                        }
+                    }
+                    else if (command == Command.Create)
+                    {
+                        if (subNodes.Count == 0)
+                        {
+                            msg += "  Adding subnode " + subMod.name + "\n";
+
+                            ConfigNode copy = new ConfigNode(nodeType);
+
+                            if (nodeName != null)
+                                copy.AddValue("name", nodeName);
+
+                            ConfigNode newSubNode = ModifyNode(copy, subMod);
+                            newNode.nodes.Add(newSubNode);
+                        }
+                    }
+                    else
                     {
                         // find each original subnode to modify, modify it and add the modified.
                         if (subNodes.Count == 0) // no nodes to modify!
@@ -2054,30 +2136,6 @@ namespace ModuleManager
                                     newNode.nodes.Add(newSubNode);
                                     break;
                             }
-                        }
-                    }
-                    else // command == Command.Replace
-                    {
-                        // if the original exists modify it
-                        if (subNodes.Count > 0)
-                        {
-                            msg += "  Applying subnode " + subMod.name + "\n";
-                            ConfigNode newSubNode = ModifyNode(subNodes[0], subMod);
-                            subNodes[0].ClearData();
-                            newSubNode.CopyTo(subNodes[0], newSubNode.name);
-                        }
-                        else
-                        {
-                            // if not add the mod node without the % in its name
-                            msg += "  Adding subnode " + subMod.name + "\n";
-
-                            ConfigNode copy = new ConfigNode(nodeType);
-
-                            if (nodeName != null)
-                                copy.AddValue("name", nodeName);
-
-                            ConfigNode newSubNode = ModifyNode(copy, subMod);
-                            newNode.nodes.Add(newSubNode);
                         }
                     }
 
@@ -2561,7 +2619,9 @@ namespace ModuleManager
 
             Paste,
 
-            Special
+            Special,
+
+            Create
         }
 
         private static Command ParseCommand(string name, out string valueName)
@@ -2602,6 +2662,10 @@ namespace ModuleManager
 
                 case '*':
                     ret = Command.Special;
+                    break;
+
+                case '&':
+                    ret = Command.Create;
                     break;
 
                 default:
@@ -2708,9 +2772,21 @@ namespace ModuleManager
 
                         // @MODULE[ModuleAlternator] or !MODULE[ModuleAlternator]
                         bool not = (constraints[0] == '!');
-                        ConfigNode subNode = MMPatchLoader.FindConfigNodeIn(node, type, name);
-                        if (subNode != null)
-                            return not ^ CheckConstraints(subNode, remainingConstraints);
+
+                        bool any = false;
+                        int index = 0;
+                        ConfigNode last = null;
+                        while (true)
+                        {
+                            ConfigNode subNode = FindConfigNodeIn(node, type, name, index++);
+                            if (subNode == last || subNode == null)
+                                break;
+                            any = any || CheckConstraints(subNode, remainingConstraints);
+                            last = subNode;
+                        }
+                        if (last != null)
+                            return not ^ any;
+
                         return not ^ false;
 
                     case '#':
