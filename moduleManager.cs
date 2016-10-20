@@ -2,11 +2,13 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
+using TMPro;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
 
@@ -27,8 +29,13 @@ namespace ModuleManager
 
         private string version = "";
 
-        private Texture2D tex;
-        private Texture2D tex2;
+        //private Texture2D tex;
+        //private Texture2D tex2;
+
+        private Sprite[] catFrames;
+        private Texture2D rainbow;
+
+
         private int activePos = 0;
 
         private bool nyan = false;
@@ -103,18 +110,118 @@ namespace ModuleManager
                 log(string.Format("Adding ModuleManager to the loading screen {0}", list.Count));
                 list.Insert(1, loader);
             }
-
-            tex = new Texture2D(33, 20, TextureFormat.ARGB32, false);
-            tex.LoadImage(Properties.Resources.cat);
-            Color[] pix = tex.GetPixels(0, 0, 1, tex.height);
-            tex2 = new Texture2D(1, 20, TextureFormat.ARGB32, false);
-            tex2.SetPixels(pix);
-            tex2.Apply();
-
-            nyan = (DateTime.Now.Month == 4 && DateTime.Now.Day == 1) ||
-                   Environment.GetCommandLineArgs().Contains("-nyan-nyan");
+            
+            nyan = (DateTime.Now.Month == 4 && DateTime.Now.Day == 1)
+                || (DateTime.Now < new DateTime(2016, 11, 1))
+                || Environment.GetCommandLineArgs().Contains("-nyan-nyan");
 
             loadedInScene = true;
+        }
+
+        private TextMeshProUGUI status;
+        private TextMeshProUGUI errors;
+        private TextMeshProUGUI warning;
+
+
+        private void Start()
+        {
+            SendCatToLaunchBay();
+
+            Canvas canvas = LoadingScreen.Instance.GetComponentInChildren<Canvas>();
+            
+            status = CreateTextObject(canvas, "MMStatus");
+            errors = CreateTextObject(canvas, "MMErrors");
+            warning = CreateTextObject(canvas, "MMWarning");
+            warning.text = "";
+
+            //if (Versioning.version_major == 1 && Versioning.version_minor == 0 && Versioning.Revision == 5 && Versioning.BuildID == 1024)
+            //{
+            //    warning.text = "Your KSP 1.0.5 is running on build 1024. You should upgrade to build 1028 to avoid problems with addons.";
+            //    //if (GUI.Button(new Rect(Screen.width / 2f - 100, offsetY, 200, 20), "Click to open the Forum thread"))
+            //    //    Application.OpenURL("http://forum.kerbalspaceprogram.com/index.php?/topic/124998-silent-patch-for-ksp-105-published/");
+            //}
+        }
+
+        private TextMeshProUGUI CreateTextObject(Canvas canvas, string name)
+        {
+            GameObject statusGameObject = new GameObject(name);
+            TextMeshProUGUI text = statusGameObject.AddComponent<TextMeshProUGUI>();
+            text.text = "STATUS";
+            text.fontSize = 16;
+            text.autoSizeTextContainer = true;
+            text.font = Resources.Load("Fonts/Calibri SDF", typeof(TMP_FontAsset)) as TMP_FontAsset;
+            text.alignment = TextAlignmentOptions.Center;
+            text.enableWordWrapping = false;
+            text.isOverlay = true;
+            statusGameObject.transform.SetParent(canvas.transform);
+
+            return text;
+        }
+
+        private void SendCatToLaunchBay()
+        {
+            if (!nyan)
+                return;
+
+            // Nyancat are GO !!!
+
+            Texture2D[] tex = new Texture2D[12];
+            for (int i = 0; i < tex.Length; i++)
+            {
+                tex[i] = new Texture2D(70, 42, TextureFormat.ARGB32, false);
+            }
+            tex[0].LoadImage(Properties.Resources.cat1);
+            tex[1].LoadImage(Properties.Resources.cat2);
+            tex[2].LoadImage(Properties.Resources.cat3);
+            tex[3].LoadImage(Properties.Resources.cat4);
+            tex[4].LoadImage(Properties.Resources.cat5);
+            tex[5].LoadImage(Properties.Resources.cat6);
+            tex[6].LoadImage(Properties.Resources.cat7);
+            tex[7].LoadImage(Properties.Resources.cat8);
+            tex[8].LoadImage(Properties.Resources.cat9);
+            tex[9].LoadImage(Properties.Resources.cat10);
+            tex[10].LoadImage(Properties.Resources.cat11);
+            tex[11].LoadImage(Properties.Resources.cat12);
+
+            rainbow = new Texture2D(39, 36, TextureFormat.ARGB32, false);
+            rainbow.LoadImage(Properties.Resources.rainbow);
+            rainbow.Apply();
+
+            catFrames = new Sprite[12];
+
+            for (int i = 0; i < tex.Length; i++)
+            {
+                tex[i].Apply();
+                catFrames[i] = Sprite.Create(tex[i], new Rect(0, 0, tex[i].width, tex[i].height), new Vector2(.5f, .5f));
+                catFrames[i].name = "cat" + i;
+            }
+
+            GameObject cat = new GameObject("NyanCat");
+            SpriteRenderer sr = cat.AddComponent<SpriteRenderer>();
+            TrailRenderer trail = cat.AddComponent<TrailRenderer>();
+            CatMover catMover = cat.AddComponent<CatMover>();
+
+            sr.sprite = catFrames[0];
+
+            trail.material = new Material(Shader.Find("Particles/Alpha Blended"));
+            Debug.Log("material = " + trail.material);
+            trail.material.mainTexture = rainbow;
+            trail.time = 1.5f;
+            trail.startWidth = rainbow.height;
+            trail.endWidth = rainbow.height * 0.9f;
+
+            cat.layer = LayerMask.NameToLayer("UI");
+
+            catMover.frames = catFrames;
+            int scale = 70;
+
+            scale *= 1;
+            if (Screen.height >= 1080)
+                scale *= 2;
+            if (Screen.height > 1440)
+                scale *= 3;
+
+            cat.transform.localScale = scale * Vector3.one;
         }
 
         // Unsubscribe from events when the behavior dies
@@ -126,8 +233,41 @@ namespace ModuleManager
 
         internal void Update()
         {
-            if (GameSettings.MODIFIER_KEY.GetKey() && Input.GetKeyDown(KeyCode.F11))
-                showUI = !showUI;
+            if (GameSettings.MODIFIER_KEY.GetKey() && Input.GetKeyDown(KeyCode.F11) 
+                && (HighLogic.LoadedScene == GameScenes.SPACECENTER || HighLogic.LoadedScene == GameScenes.MAINMENU)
+                && !inRnDCenter)
+            {
+                PopupDialog.SpawnPopupDialog(new Vector2(0.5f, 0.5f),
+                    new Vector2(0.5f, 0.5f),
+                    new MultiOptionDialog("",
+                        "ModuleManager",
+                        HighLogic.UISkin,
+                        new Rect(0.5f, 0.5f, 150f, 60f),
+                        new DialogGUIFlexibleSpace(),
+                        new DialogGUIVerticalLayout(
+                            new DialogGUIFlexibleSpace(),
+                            new DialogGUIButton("Reload Database",
+                                delegate
+                                {
+                                    MMPatchLoader.keepPartDB = false;
+                                    StartCoroutine(DataBaseReloadWithMM());
+                                }, 140.0f, 30.0f, true), 
+                            new DialogGUIButton("Quick Reload Database",
+                                delegate
+                                {
+                                    MMPatchLoader.keepPartDB = true;
+                                    StartCoroutine(DataBaseReloadWithMM());
+                                }, 140.0f, 30.0f, true),
+                            new DialogGUIButton("Dump Database to Files",
+                                delegate
+                                {
+                                    StartCoroutine(DataBaseReloadWithMM(true));
+                                }, 140.0f, 30.0f, true),
+                            new DialogGUIButton("Close",() => {}, 140.0f, 30.0f, true)
+                            )),
+                    false,
+                    HighLogic.UISkin);
+            }
 
             if (totalTime.IsRunning && HighLogic.LoadedScene == GameScenes.MAINMENU)
             {
@@ -135,9 +275,34 @@ namespace ModuleManager
                 log("Total loading Time = " + ((float)totalTime.ElapsedMilliseconds / 1000).ToString("F3") + "s");
 
                 Application.runInBackground = GameSettings.SIMULATE_IN_BACKGROUND;
-
             }
 
+            float offsetY = Mathf.FloorToInt(0.3f * Screen.height);
+            float h;
+            if (warning)
+            {
+                warning.transform.localPosition = new Vector3(0, -offsetY);
+                h = warning.textBounds.size.y;
+                if (h > 0)
+                    offsetY = offsetY + h + 10;
+            }
+
+            if (status)
+            {
+                status.transform.localPosition = new Vector3(0, -offsetY);
+                status.text = MMPatchLoader.Instance.status;
+
+                h = status.textBounds.size.y;
+                if (h > 0)
+                    offsetY = offsetY + h + 10;
+            }
+            
+            if (errors)
+            {
+                errors.transform.localPosition = new Vector3(0, -offsetY);
+                errors.text = MMPatchLoader.Instance.errors;
+            }
+            
             if (reloading)
             {
                 float percent = 0;
@@ -155,119 +320,6 @@ namespace ModuleManager
         }
 
         #region GUI stuff.
-
-        public void OnGUI()
-        {
-            if (HighLogic.LoadedScene == GameScenes.LOADING && MMPatchLoader.Instance != null)
-            {
-                float offsetY = Mathf.FloorToInt(0.8f * Screen.height);
-                
-                if (Versioning.version_major == 1 && Versioning.version_minor == 0 && Versioning.Revision == 5 && Versioning.BuildID == 1024)
-                {
-                    GUIStyle centeredWarningStyle = new GUIStyle(GUI.skin.GetStyle("Label"))
-                    {
-                        alignment = TextAnchor.UpperCenter,
-                        fontSize = 16,
-                        normal = { textColor = Color.yellow }
-                    };
-                    const string warning = "Your KSP 1.0.5 is running on build 1024. You should upgrade to build 1028 to avoid problems with addons.";
-
-                    Vector2 sizeOfWarningLabel = centeredWarningStyle.CalcSize(new GUIContent(warning));
-
-                    GUI.Label(new Rect(Screen.width / 2f - (sizeOfWarningLabel.x / 2f), offsetY, sizeOfWarningLabel.x, sizeOfWarningLabel.y), warning, centeredWarningStyle);
-                    
-                    offsetY += sizeOfWarningLabel.y;
-                    if (GUI.Button(new Rect(Screen.width/2f - 100, offsetY, 200, 20), "Click to open the Forum thread"))
-                        Application.OpenURL("http://forum.kerbalspaceprogram.com/index.php?/topic/124998-silent-patch-for-ksp-105-published/");
-
-                    offsetY += 25;
-                }
-
-                //if (IsABadIdea())
-                //{
-                //    GUIStyle centeredWarningStyle = new GUIStyle(GUI.skin.GetStyle("Label"))
-                //    {
-                //        alignment = TextAnchor.UpperCenter,
-                //        fontSize = 16,
-                //        normal = { textColor = Color.yellow }
-                //    };
-                //    const string warning = "You are using 64-bit KSP on Windows. This version of KSP is known to cause crashes unrelated to mods.";
-                //    Vector2 sizeOfWarningLabel = centeredWarningStyle.CalcSize(new GUIContent(warning));
-                //
-                //    GUI.Label(new Rect(Screen.width / 2f - (sizeOfWarningLabel.x / 2f), offsetY, sizeOfWarningLabel.x, sizeOfWarningLabel.y), warning, centeredWarningStyle);
-                //    offsetY += sizeOfWarningLabel.y;
-                //}
-
-                GUIStyle centeredStyle = new GUIStyle(GUI.skin.GetStyle("Label"))
-                {
-                    alignment = TextAnchor.UpperCenter,
-                    fontSize = 16
-                };
-                Vector2 sizeOfLabel = centeredStyle.CalcSize(new GUIContent(MMPatchLoader.Instance.status));
-                GUI.Label(new Rect(Screen.width / 2f - (sizeOfLabel.x / 2f), offsetY, sizeOfLabel.x, sizeOfLabel.y), MMPatchLoader.Instance.status, centeredStyle);
-                offsetY += sizeOfLabel.y;
-
-                if (MMPatchLoader.Instance.errorCount > 0)
-                {
-                    GUIStyle errorStyle = new GUIStyle(GUI.skin.GetStyle("Label"))
-                    {
-                        alignment = TextAnchor.UpperLeft,
-                        fontSize = 16
-                    };
-                    Vector2 sizeOfError = errorStyle.CalcSize(new GUIContent(MMPatchLoader.Instance.errors));
-                    GUI.Label(new Rect(Screen.width / 2f - (sizeOfLabel.x / 2), offsetY, sizeOfError.x, sizeOfError.y), MMPatchLoader.Instance.errors, errorStyle);
-                    offsetY += sizeOfError.y;
-                }
-
-
-                if (nyan)
-                {
-                    GUI.color = Color.white;
-                    int scale = 1;
-                    if (Screen.height >= 1080)
-                        scale = 2;
-                    if (Screen.height > 1440)
-                        scale = 3;
-
-                    int trailLength = 8 * tex.width * scale;
-                    int totalLenth = trailLength + tex.width * scale;
-                    int startPos = activePos - totalLenth;
-
-                    Color guiColor = Color.white;
-                    int currentOffset = 0;
-                    int heightOffset = 0;
-                    while (currentOffset < trailLength)
-                    {
-                        guiColor.a = (float)currentOffset / trailLength;
-                        GUI.color = guiColor;
-
-                        heightOffset = Mathf.RoundToInt(1f + Mathf.Sin(2f * Mathf.PI * (startPos + currentOffset) / (Screen.width / 6f)) * (tex.height * scale / 6f));
-
-                        GUI.DrawTexture(new Rect(startPos + currentOffset, heightOffset + offsetY, tex2.width, tex2.height * scale), tex2);
-                        currentOffset++;
-                    }
-                    GUI.DrawTexture(new Rect(startPos + currentOffset, heightOffset + offsetY, tex.width * scale, tex.height * scale), tex);
-
-                    activePos = (activePos + 3) % (Screen.width + totalLenth);
-                    GUI.color = Color.white;
-                }
-            }
-
-
-            if (showUI &&
-                (HighLogic.LoadedScene == GameScenes.SPACECENTER || HighLogic.LoadedScene == GameScenes.MAINMENU) &&
-                !inRnDCenter)
-            {
-                windowPos = GUILayout.Window(
-                    GetType().FullName.GetHashCode(),
-                    windowPos,
-                    WindowGUI,
-                    "ModuleManager " + version,
-                    GUILayout.Width(200),
-                    GUILayout.Height(20));
-            }
-        }
-
         
         internal static IntPtr intPtr = new IntPtr(long.MaxValue);
         /* Not required anymore. At least
@@ -276,26 +328,6 @@ namespace ModuleManager
             return (intPtr.ToInt64() == long.MaxValue) && (Environment.OSVersion.Platform == PlatformID.Win32NT);
         }
         */
-
-        private void WindowGUI(int windowID)
-        {
-            GUILayout.BeginVertical();
-
-            if (GUILayout.Button("Reload Database"))
-            {
-                MMPatchLoader.keepPartDB = false;
-                StartCoroutine(DataBaseReloadWithMM());
-            }
-            if (GUILayout.Button("Quick Reload Database"))
-            {
-                MMPatchLoader.keepPartDB = true;
-                StartCoroutine(DataBaseReloadWithMM());
-            }
-            if (GUILayout.Button("Dump Database to File"))
-                StartCoroutine(DataBaseReloadWithMM(true));
-            GUILayout.EndVertical();
-            GUI.DragWindow();
-        }
 
         private IEnumerator DataBaseReloadWithMM(bool dump = false)
         {
@@ -321,7 +353,7 @@ namespace ModuleManager
 
             log("DB Reload OK with patchCount=" + MMPatchLoader.Instance.patchedNodeCount + " errorCount=" +
                 MMPatchLoader.Instance.errorCount + " needsUnsatisfiedCount=" +
-                MMPatchLoader.Instance.needsUnsatisfiedCount);
+                MMPatchLoader.Instance.needsUnsatisfiedCount + " exceptionCount=" + MMPatchLoader.Instance.exceptionCount);
 
             PartResourceLibrary.Instance.LoadDefinitions();
 
@@ -437,6 +469,8 @@ namespace ModuleManager
 
     public delegate void ModuleManagerPostPatchCallback();
 
+    [SuppressMessage("ReSharper", "StringLastIndexOfIsCultureSpecific.1")]
+    [SuppressMessage("ReSharper", "StringIndexOfIsCultureSpecific.1")]
     public class MMPatchLoader : LoadingSystem
     {
         public int totalPatchCount = 0;
@@ -446,6 +480,8 @@ namespace ModuleManager
         public int patchedNodeCount = 0;
 
         public int errorCount = 0;
+
+        public int exceptionCount = 0;
 
         public int needsUnsatisfiedCount = 0;
 
@@ -469,20 +505,18 @@ namespace ModuleManager
 
         private static ConfigNode topNode;
 
-        private static string cachePath = KSPUtil.ApplicationRootPath + Path.DirectorySeparatorChar + "GameData"
-                          + Path.DirectorySeparatorChar + "ModuleManager.ConfigCache";
+        private static string cachePath;
 
-        internal static readonly string techTreeFile = "GameData" + Path.DirectorySeparatorChar + "ModuleManager.TechTree";
-        internal static readonly string techTreePath = KSPUtil.ApplicationRootPath + Path.DirectorySeparatorChar + techTreeFile;
+        internal static string techTreeFile;
+        internal static string techTreePath;
 
-        internal static readonly string physicsFile = "GameData" + Path.DirectorySeparatorChar + "ModuleManager.Physics";
-        internal static readonly string physicsPath = KSPUtil.ApplicationRootPath + Path.DirectorySeparatorChar + physicsFile;
-        private static readonly string defaultPhysicsPath = KSPUtil.ApplicationRootPath + Path.DirectorySeparatorChar + "Physics.cfg";
+        internal static string physicsFile;
+        internal static string physicsPath;
+        private static string defaultPhysicsPath;
 
-        internal static readonly string partDatabasePath = KSPUtil.ApplicationRootPath + Path.DirectorySeparatorChar + "PartDatabase.cfg";
+        internal static string partDatabasePath;
 
-        private static readonly string shaPath = KSPUtil.ApplicationRootPath + Path.DirectorySeparatorChar + "GameData"
-                          + Path.DirectorySeparatorChar + "ModuleManager.ConfigSHA";
+        private static string shaPath;
 
         private UrlDir.UrlFile physicsUrlFile;
 
@@ -493,8 +527,7 @@ namespace ModuleManager
 
         private readonly Stopwatch patchSw = new Stopwatch();
 
-        private static readonly List<ModuleManagerPostPatchCallback> postPatchCallbacks =
-            new List<ModuleManagerPostPatchCallback>();
+        private static readonly List<ModuleManagerPostPatchCallback> postPatchCallbacks = new List<ModuleManagerPostPatchCallback>();
 
         private const float yieldInterval = 1f/30f; // Patch at ~30fps
 
@@ -509,17 +542,26 @@ namespace ModuleManager
             }
             Instance = this;
             DontDestroyOnLoad(gameObject);
+
+            cachePath = KSPUtil.ApplicationRootPath + Path.DirectorySeparatorChar + "GameData" + Path.DirectorySeparatorChar + "ModuleManager.ConfigCache";
+            techTreeFile = "GameData" + Path.DirectorySeparatorChar + "ModuleManager.TechTree";
+            techTreePath = KSPUtil.ApplicationRootPath + Path.DirectorySeparatorChar + techTreeFile;
+            physicsFile = "GameData" + Path.DirectorySeparatorChar + "ModuleManager.Physics";
+            physicsPath = KSPUtil.ApplicationRootPath + Path.DirectorySeparatorChar + physicsFile;
+            defaultPhysicsPath = KSPUtil.ApplicationRootPath + Path.DirectorySeparatorChar + "Physics.cfg";
+            partDatabasePath = KSPUtil.ApplicationRootPath + Path.DirectorySeparatorChar + "PartDatabase.cfg";
+            shaPath = KSPUtil.ApplicationRootPath + Path.DirectorySeparatorChar + "GameData" + Path.DirectorySeparatorChar + "ModuleManager.ConfigSHA";
         }
 
         private bool ready;
 
         public override bool IsReady()
         {
+            //return false;
             if (ready)
             {
                 patchSw.Stop();
                 log("Ran in " + ((float)patchSw.ElapsedMilliseconds / 1000).ToString("F3") + "s");
-
             }
             return ready;
         }
@@ -668,6 +710,7 @@ namespace ModuleManager
                         {
                             log("Skipping :FOR init for line " + name +
                                 ". The line most likely contain a space that should be removed");
+                            errorCount++;
                         }
                     }
                 }
@@ -709,6 +752,10 @@ namespace ModuleManager
 
         private IEnumerator ProcessPatch(bool blocking)
         {
+            status = "Checking Cache";
+            log(status);
+            yield return null;
+            
             try
             {
                 IsCacheUpToDate();
@@ -723,14 +770,17 @@ namespace ModuleManager
             //useCache = false;
 #endif
 
+            status = "Pre patch init";
+            log(status);
             yield return null;
 
             List<string> excludePaths = PrePatchInit();
 
-            yield return null;
 
             if (!useCache)
             {
+                yield return null;
+
                 // If we don't use the cache then it is best to clean the PartDatabase.cfg
                 if (!keepPartDB && File.Exists(partDatabasePath))
                     File.Delete(partDatabasePath);
@@ -739,18 +789,22 @@ namespace ModuleManager
 
                 #region Check Needs
 
-                // Do filtering with NEEDS
-                log("Checking NEEDS.");
 
+
+                // Do filtering with NEEDS
+                status = "Checking NEEDS.";
+                log(status);
+                yield return null;
                 CheckNeeds(excludePaths);
 
                 #endregion Check Needs
 
-                yield return null;
-
                 #region Applying patches
 
-                log("Applying patches");
+                status = "Applying patches";
+                log(status);
+
+                yield return null;
 
                 // :First node
                 yield return StartCoroutine(ApplyPatch(excludePaths, ":FIRST"), blocking);
@@ -769,14 +823,13 @@ namespace ModuleManager
                 // :Final node
                 yield return StartCoroutine(ApplyPatch(excludePaths, ":FINAL"), blocking);
 
-
                 PurgeUnused(excludePaths);
 
                 #endregion Applying patches
 
                 #region Logging
 
-                if (errorCount > 0)
+                if (errorCount > 0 || exceptionCount > 0)
                 {
                     foreach (string file in errorFiles.Keys)
                     {
@@ -799,6 +852,9 @@ namespace ModuleManager
                 }
                 else
                 {
+                    status = "Saving Cache";
+                    log(status);
+                    yield return null;
                     CreateCache();
                 }
                 
@@ -807,7 +863,9 @@ namespace ModuleManager
             }
             else
             {
-                log("Loading from Cache");
+                status = "Loading from Cache";
+                log(status);
+                yield return null;
                 LoadCache();
             }
 
@@ -1253,7 +1311,11 @@ namespace ModuleManager
             status = "ModuleManager: " + patchedNodeCount + " patch" + (patchedNodeCount != 1 ? "es" : "") + (useCache ? " loaded from cache" : " applied");
 
             if (errorCount > 0)
-                status += ", found " + errorCount + " error" + (errorCount != 1 ? "s" : "");
+                status += ", found <color=orange>" + errorCount + " error" + (errorCount != 1 ? "s" : "") + "</color>";
+
+            if (exceptionCount > 0)
+                status += ", encountered <color=red>" + exceptionCount + " exception" + (exceptionCount != 1 ? "s" : "") + "</color>";
+
             if (catEatenCount > 0)
                 status += ", " + catEatenCount + " patch" + (catEatenCount != 1 ? "es were" : " was") + " eaten by the Win64 cat";
         }
@@ -1312,6 +1374,7 @@ namespace ModuleManager
                 {
                     log("Exception while checking needs : " + currentMod.url + " with a type of " + currentMod.type + "\n" + ex);
                     log("Node is : " + PrettyConfig(currentMod));
+                    exceptionCount++;
                 }
             }
         }
@@ -1463,7 +1526,9 @@ namespace ModuleManager
         // Apply patch to all relevent nodes
         public IEnumerator ApplyPatch(List<string> excludePaths, string Stage)
         {
+            StatusUpdate();
             log(Stage + (Stage == ":LEGACY" ? " (default) pass" : " pass"));
+            yield return null;
 
             activity = "ModuleManager " + Stage;
 
@@ -1475,6 +1540,7 @@ namespace ModuleManager
             {
                 UrlDir.UrlConfig mod = allConfigs[modsIndex];
                 int lastErrorCount = errorCount;
+                int lastExceptionCount = exceptionCount;
                 try
                 {
                     string name = RemoveWS(mod.type);
@@ -1601,24 +1667,28 @@ namespace ModuleManager
                 catch (Exception e)
                 {
                     log("Exception while processing node : " + mod.url + "\n" + e);
-                    log(PrettyConfig(mod));
+                    exceptionCount++;
+                    log("Processed node was\n" + PrettyConfig(mod));
                     mod.parent.configs.Remove(mod);
                 }
                 finally
                 {
-                    if (lastErrorCount < errorCount)
-                        addErrorFiles(mod.parent, errorCount - lastErrorCount);
+                    if (lastErrorCount < errorCount || lastExceptionCount < exceptionCount)
+                        addErrorFiles(mod.parent, errorCount - lastErrorCount + exceptionCount - lastExceptionCount);
                 }
                 if (nextYield < Time.realtimeSinceStartup)
                 {
                     nextYield = Time.realtimeSinceStartup + yieldInterval;
+                    StatusUpdate();
                     yield return null;
                 }
             }
+            StatusUpdate();
+            yield return null;
         }
 
         // Name is group 1, index is group 2, vector related filed is group 3, vector separator is group 4, operator is group 5
-        private static Regex parseValue = new Regex(@"([\w\&\-\.\?\*]*)(?:,(-?[0-9\*]+))?(?:\[((?:[0-9\*]+)+)(?:,(.))?\])?(?:\s([+\-*/^!]))?");
+        private static Regex parseValue = new Regex(@"([\w\&\-\.\?\*]+(?:,\D[\w\&\-\.\?\*]*)*)(?:,(-?[0-9\*]+))?(?:\[((?:[0-9\*]+)+)(?:,(.))?\])?(?:\s([+\-*/^!]))?");
 
         // Path is group 1, operator is group 5
         private static Regex parseAssign = new Regex(@"(.*)(?:\s)+([+\-*/^!])?");
@@ -1636,11 +1706,14 @@ namespace ModuleManager
 
             #region Values
 
+            #if LOGSPAM
             string vals = "[ModuleManager] modding values";
+            #endif
             foreach (ConfigNode.Value modVal in mod.values)
             {
+                #if LOGSPAM
                 vals += "\n   " + modVal.name + "= " + modVal.value;
-
+                #endif
                 string valName;
                 Command cmd = ParseCommand(modVal.name, out valName);
 
@@ -1823,8 +1896,10 @@ namespace ModuleManager
 
                                 if (value != null)
                                 {
+                                    #if LOGSPAM
                                     if (origVal.value != value)
                                         vals += ": " + origVal.value + " -> " + value;
+                                    #endif
 
                                     if (cmd != Command.Copy)
                                         origVal.value = value;
@@ -1921,7 +1996,9 @@ namespace ModuleManager
                         break;
                 }
             }
-            //log(vals);
+            #if LOGSPAM
+            log(vals);
+            #endif
 
             #endregion Values
 
@@ -2001,8 +2078,9 @@ namespace ModuleManager
                     string tag = "";
                     string nodeType, nodeName;
                     int index = 0;
+                    #if LOGSPAM
                     string msg = "";
-
+                    #endif
                     List<ConfigNode> subNodes = new List<ConfigNode>();
 
                     // three ways to specify:
@@ -2040,9 +2118,7 @@ namespace ModuleManager
                     if (tag == "*" || constraints.Length > 0)
                     {
                         // get ALL nodes
-                        if (command == Command.Replace)
-                            msg += "  cannot wildcard a % node: " + subMod.name + "\n";
-                        else
+                        if (command != Command.Replace)
                         {
                             ConfigNode n, last = null;
                             while (true)
@@ -2055,6 +2131,10 @@ namespace ModuleManager
                                 last = n;
                             }
                         }
+#if LOGSPAM
+                        else
+                            msg += "  cannot wildcard a % node: " + subMod.name + "\n";
+#endif
                     }
                     else
                     {
@@ -2069,7 +2149,9 @@ namespace ModuleManager
                         // if the original exists modify it
                         if (subNodes.Count > 0)
                         {
+                            #if LOGSPAM
                             msg += "  Applying subnode " + subMod.name + "\n";
+                            #endif
                             ConfigNode newSubNode = ModifyNode(subNodes[0], subMod);
                             subNodes[0].ClearData();
                             newSubNode.CopyTo(subNodes[0], newSubNode.name);
@@ -2077,7 +2159,9 @@ namespace ModuleManager
                         else
                         {
                             // if not add the mod node without the % in its name
+                            #if LOGSPAM
                             msg += "  Adding subnode " + subMod.name + "\n";
+                            #endif
 
                             ConfigNode copy = new ConfigNode(nodeType);
 
@@ -2092,7 +2176,9 @@ namespace ModuleManager
                     {
                         if (subNodes.Count == 0)
                         {
+                            #if LOGSPAM
                             msg += "  Adding subnode " + subMod.name + "\n";
+                            #endif
 
                             ConfigNode copy = new ConfigNode(nodeType);
 
@@ -2106,12 +2192,16 @@ namespace ModuleManager
                     else
                     {
                         // find each original subnode to modify, modify it and add the modified.
+                        #if LOGSPAM
                         if (subNodes.Count == 0) // no nodes to modify!
                             msg += "  Could not find node(s) to modify: " + subMod.name + "\n";
+                        #endif
 
                         foreach (ConfigNode subNode in subNodes)
                         {
+                            #if LOGSPAM
                             msg += "  Applying subnode " + subMod.name + "\n";
+                            #endif
                             ConfigNode newSubNode;
                             switch (command)
                             {
@@ -2138,8 +2228,9 @@ namespace ModuleManager
                             }
                         }
                     }
-
-                    //print(msg);
+                    #if LOGSPAM
+                    print(msg);
+                    #endif
                 }
             }
 
@@ -2248,10 +2339,10 @@ namespace ModuleManager
                 if (constraint.Length > 0)
                 {
                     // get the first one matching
-                    ConfigNode n, last = null;
+                    ConfigNode last = null;
                     while (true)
                     {
-                        n = FindConfigNodeIn(currentNode, nodeType, nodeName, index++);
+                        ConfigNode n = FindConfigNodeIn(currentNode, nodeType, nodeName, index++);
                         if (n == last || n == null)
                         {
                             currentNode = null;
@@ -2402,10 +2493,10 @@ namespace ModuleManager
                 if (constraint.Length > 0)
                 {
                     // get the first one matching
-                    ConfigNode n, last = null;
+                    ConfigNode last = null;
                     while (true)
                     {
-                        n = FindConfigNodeIn(currentNode, nodeType, nodeName, index++);
+                        ConfigNode n = FindConfigNodeIn(currentNode, nodeType, nodeName, index++);
                         if (n == last || n == null)
                             break;
                         if (CheckConstraints(n, constraint))
@@ -2740,9 +2831,12 @@ namespace ModuleManager
             return conditions;
         }
 
+        static readonly char[] contraintSeparators = { '[', ']' };
+
         public static bool CheckConstraints(ConfigNode node, string constraints)
         {
             constraints = RemoveWS(constraints);
+            
             if (constraints.Length == 0)
                 return true;
 
@@ -2760,8 +2854,7 @@ namespace ModuleManager
                     constraints = constraints.Substring(0, start - 5);
                 }
 
-                char[] sep = { '[', ']' };
-                string[] splits = constraints.Split(sep, 3);
+                string[] splits = constraints.Split(contraintSeparators, 3);
                 string type = splits[0].Substring(1);
                 string name = splits.Length > 1 ? splits[1] : null;
 
@@ -2785,15 +2878,23 @@ namespace ModuleManager
                             last = subNode;
                         }
                         if (last != null)
+                        {
+                            //print("CheckConstraints: " + constraints + " " + (not ^ any));
                             return not ^ any;
-
+                        }
+                        //print("CheckConstraints: " + constraints + " " + (not ^ false));
                         return not ^ false;
 
                     case '#':
 
                         // #module[Winglet]
                         if (node.HasValue(type) && WildcardMatchValues(node, type, name))
-                            return CheckConstraints(node, remainingConstraints);
+                        {
+                            bool ret2 = CheckConstraints(node, remainingConstraints);
+                            //print("CheckConstraints: " + constraints + " " + ret2);
+                            return ret2;
+                        }
+                        //print("CheckConstraints: " + constraints + " false");
                         return false;
 
                     case '~':
@@ -2801,16 +2902,32 @@ namespace ModuleManager
                         // ~breakingForce[]  breakingForce is not present
                         // or: ~breakingForce[100]  will be true if it's present but not 100, too.
                         if (name == "" && node.HasValue(type))
+                        {
+                            //print("CheckConstraints: " + constraints + " false");
                             return false;
+                        }
                         if (name != "" && WildcardMatchValues(node, type, name))
+                        {
+                            //print("CheckConstraints: " + constraints + " false");
                             return false;
-                        return CheckConstraints(node, remainingConstraints);
+                        }
+                        bool ret = CheckConstraints(node, remainingConstraints);
+                        //print("CheckConstraints: " + constraints + " " + ret);
+                        return ret;
 
                     default:
+                        //print("CheckConstraints: " + constraints + " false");
                         return false;
                 }
             }
-            return constraintList.TrueForAll(c => CheckConstraints(node, c));
+
+            bool ret3 = true;
+            foreach (string constraint in constraintList)
+            {
+                ret3 = ret3 && CheckConstraints(node, constraint);
+            }
+            //print("CheckConstraints: " + constraints + " " + ret3);
+            return ret3;
         }
 
         public static bool WildcardMatchValues(ConfigNode node, string type, string value)
