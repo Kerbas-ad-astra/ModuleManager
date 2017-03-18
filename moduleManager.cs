@@ -709,7 +709,7 @@ namespace ModuleManager
                         catch (ArgumentOutOfRangeException)
                         {
                             log("Skipping :FOR init for line " + name +
-                                ". The line most likely contain a space that should be removed");
+                                ". The line most likely contains a space that should be removed");
                             errorCount++;
                         }
                     }
@@ -882,6 +882,9 @@ namespace ModuleManager
             // TODO : Remove if we ever get a way to load sooner
             log("Reloading resources definitions");
             PartResourceLibrary.Instance.LoadDefinitions();
+
+            log("Reloading Trait configs");
+            GameDatabase.Instance.ExperienceConfigs.LoadTraitConfigs();
 
             foreach (ModuleManagerPostPatchCallback callback in postPatchCallbacks)
             {
@@ -1688,7 +1691,7 @@ namespace ModuleManager
         }
 
         // Name is group 1, index is group 2, vector related filed is group 3, vector separator is group 4, operator is group 5
-        private static Regex parseValue = new Regex(@"([\w\&\-\.\?\*]+(?:,\D[\w\&\-\.\?\*]*)*)(?:,(-?[0-9\*]+))?(?:\[((?:[0-9\*]+)+)(?:,(.))?\])?(?:\s([+\-*/^!]))?");
+        private static Regex parseValue = new Regex(@"([\w\&\-\.\?\*]+(?:,[^*\d][\w\&\-\.\?\*]*)*)(?:,(-?[0-9\*]+))?(?:\[((?:[0-9\*]+)+)(?:,(.))?\])?(?:\s([+\-*/^!]))?");
 
         // Path is group 1, operator is group 5
         private static Regex parseAssign = new Regex(@"(.*)(?:\s)+([+\-*/^!])?");
@@ -1821,6 +1824,11 @@ namespace ModuleManager
                     }
                 }
 
+                int valCount = 0;
+                for (int i=0; i<newNode.CountValues; i++)
+                    if (newNode.values[i].name == valName)
+                        valCount++;
+
                 char op = ' ';
                 if (match.Groups[5].Success)
                     op = match.Groups[5].Value[0];
@@ -1884,7 +1892,7 @@ namespace ModuleManager
                         // Format is @key = value or @key *= value or @key += value or @key -= value
                         // or @key,index = value or @key,index *= value or @key,index += value or @key,index -= value
 
-                        while (index < newNode.values.Count)
+                        while (index < valCount)
                         {
                             varValue = ProcessVariableSearch(modVal.value, newNode);
 
@@ -1926,7 +1934,7 @@ namespace ModuleManager
                         }
                         else if (match.Groups[2].Success)
                         {
-                            while (index < newNode.values.Count)
+                            while (index < valCount)
                             {
                                 // If there is an index, use it.
                                 ConfigNode.Value v = FindValueIn(newNode, valName, index);
@@ -1988,7 +1996,7 @@ namespace ModuleManager
                             }
                             else
                             {
-                                log("Error - Cannot parse variable search when replacing (%) key " + valName + " = " +
+                                log("Error - Cannot parse variable search when replacing (&) key " + valName + " = " +
                                     modVal.value);
                                 errorCount++;
                             }
